@@ -1,0 +1,14 @@
+<!-- -->
+<launch>
+	<arg name="point_cloud_topic" default="/camera/depth/points" />
+	<arg name="dreg" default="false" />
+
+	<group if="$(arg dreg)">
+		<arg name="point_cloud_topic" value="/camera/depth_registered/points" />
+	</group>
+
+	<node pkg="humanoid_localization" type="localization_node" name="humanoid_localization" output="screen" >
+		<rosparam file="$(find humanoid_localization)/config/kinect_localization.yaml" command="load" />
+		<remap from="/point_cloud" to="$(arg point_cloud_topic)" />
+	</node>
+</launch>

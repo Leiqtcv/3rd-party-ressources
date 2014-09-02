@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<package>
+  <name>3rd_party_ressources</name>
+  <version>0.0.0</version>
+  <description>The 3rd_party_ressources package</description>
+
+  <!-- One maintainer tag required, multiple allowed, one person per tag --> 
+  <maintainer email="lennartc@stud.uni-hannover.de">sysadm</maintainer>
+
+
+  <!-- One license tag required, multiple allowed, one license per tag -->
+  <!-- Commonly used license strings: -->
+  <!--   BSD, MIT, Boost Software License, GPLv2, GPLv3, LGPLv2.1, LGPLv3 -->
+  <license>TODO</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  
+  <run_depend>fovis</run_depend>
+  <run_depend>humanoid_msgs</run_depend>
+  <run_depend>humanoid_navigation</run_depend>
+  <run_depend>libfovis</run_depend>
+  <run_depend>navigation</run_depend>
+  <run_depend>octomap_mapping</run_depend>
+  <run_depend>robot_localization</run_depend>
+  <run_depend>sbpl</run_depend>
+
+  <export>
+    <metapackage/>
+  </export>
+</package>

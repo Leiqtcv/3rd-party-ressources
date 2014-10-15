@@ -52,7 +52,7 @@ public:
   virtual void initGlobal(Particles& particles,
                           double z, double roll, double pitch,
                           const Vector6d& initNoise,
-                          UniformGeneratorT& rngUniform, NormalGeneratorT& rngNormal, double maxHeight);
+                          UniformGeneratorT& rngUniform, NormalGeneratorT& rngNormal, double maxHeight, double minHeight);
 
   /// @return whether a map coordinate is occupied. Will return
   /// "false" if the coordinate does not exist in the map (e.g. out of bounds).
@@ -68,7 +68,7 @@ public:
    * @param totalHeight clearance of the robot required to be free
    * @param[out] heights list of valid heights, return by ref.
    */
-  void getHeightlist(double x, double y, double totalHeight, std::vector<double>& heights);
+  void getHeightlist(double x, double y, double minHeight, double totalHeight, std::vector<double>& heights);
 
 
 protected:

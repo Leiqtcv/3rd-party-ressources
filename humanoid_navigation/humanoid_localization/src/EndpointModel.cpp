@@ -81,7 +81,7 @@ bool EndpointModel::getHeightError(const Particle& p, const tf::StampedTransform
   tf::Vector3 xyz = p.pose.getOrigin();
   double poseHeight = footprintToBase.getOrigin().getZ();
   std::vector<double> heights;
-  m_mapModel->getHeightlist(xyz.getX(), xyz.getY(), 0.6, heights);
+  m_mapModel->getHeightlist(xyz.getX(), xyz.getY(), 0.0, 0.6, heights);
   if (heights.size() == 0)
     return false;
 

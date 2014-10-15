@@ -220,7 +220,7 @@ protected:
 
   ros::Publisher m_posePub, m_poseEvalPub, m_poseOdomPub, m_poseTruePub,
                  m_poseArrayPub, m_bestPosePub, m_nEffPub,
-                 m_filteredPointCloudPub;
+                 m_filteredPointCloudPub, m_localizationResetPub;
   ros::Subscriber m_imuSub;
   ros::ServiceServer m_globalLocSrv, m_pauseLocSrv, m_resumeLocSrv;
   tf::TransformListener m_tfListener;
@@ -252,6 +252,7 @@ protected:
   int m_bestParticleIdx;
   tf::Pose m_odomPose; // incrementally added odometry pose (=dead reckoning)
   geometry_msgs::PoseArray m_poseArray; // particles as PoseArray (preallocated)
+  geometry_msgs::PoseWithCovarianceStamped m_resetPose;
   boost::circular_buffer<sensor_msgs::Imu> m_lastIMUMsgBuffer;
 
   bool m_bestParticleAsMean;
@@ -299,6 +300,7 @@ protected:
 
   // added by LC
   double m_maxHeight;
+  double m_minHeight;
 };
 }
 

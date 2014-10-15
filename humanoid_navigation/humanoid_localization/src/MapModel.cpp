@@ -132,9 +132,11 @@ void MapModel::verifyPoses(Particles& particles){
 
 void MapModel::initGlobal(Particles& particles, double z, double roll, double pitch,
                           const Vector6d& initNoise,
-                          UniformGeneratorT& rngUniform, NormalGeneratorT& rngNormal, double maxHeight){        //maxHeight added by LC
+                          UniformGeneratorT& rngUniform, NormalGeneratorT& rngNormal, double maxHeight, double minHeight){        //maxHeight added by LC
   double sizeX,sizeY,sizeZ, minX, minY, minZ;
+  //LC: get total map size
   m_map->getMetricSize(sizeX,sizeY,sizeZ);
+  //LC: get minimum values of map bounding box
   m_map->getMetricMin(minX, minY, minZ);
 
   double weight = 1.0 / particles.size();
@@ -146,8 +148,9 @@ void MapModel::initGlobal(Particles& particles, double z, double roll, double pi
     double x = minX + sizeX * rngUniform();
     double y = minY + sizeY * rngUniform();
     std::vector<double> z_list;
-    getHeightlist(x, y, maxHeight,z_list);
+    getHeightlist(x, y, minHeight, maxHeight,z_list);
 
+    //LC: create a pose with random yaw orientation at (x,y) for every entry in the height list
     for (unsigned zIdx = 0; zIdx < z_list.size(); zIdx++){
       if (it == particles.end())
         break;
@@ -161,6 +164,7 @@ void MapModel::initGlobal(Particles& particles, double z, double roll, double pi
       it->pose.getOrigin().setY(y);
       // TODO: sample z, roll, pitch
       it->pose.getOrigin().setZ(z_list.at(zIdx) + z + rngNormal() * initNoise(2));
+      //LC: create yaw orientation from -PI to +PI
       double yaw = rngUniform() * 2 * M_PI  -M_PI;
       it->pose.setRotation(tf::createQuaternionFromRPY(roll, pitch, yaw));
       it->weight = weight;
@@ -170,6 +174,7 @@ void MapModel::initGlobal(Particles& particles, double z, double roll, double pi
 
 }
 
+//LC: replaced function
 //void MapModel::getHeightlist(double x, double y, double totalHeight, std::vector<double>& heights){
 //  double minX, minY, minZ, maxX, maxY, maxZ;
 //  m_map->getMetricMin(minX, minY, minZ);
@@ -196,11 +201,14 @@ void MapModel::initGlobal(Particles& particles, double z, double roll, double pi
 //  }
 //}
 
-//Modified function for kinect localization
-void MapModel::getHeightlist(double x, double y, double maxHeight, std::vector<double>& heights){
+//LC: Modified function for kinect localization
+void MapModel::getHeightlist(double x, double y, double minHeight, double maxHeight, std::vector<double>& heights){
   double minX, minY, minZ, maxX, maxY, maxZ;
   m_map->getMetricMin(minX, minY, minZ);
   m_map->getMetricMax(maxX, maxY, maxZ);
+
+  if(minHeight > 0.0)
+      minZ = minHeight;
 
   double res = m_map->getResolution();
 

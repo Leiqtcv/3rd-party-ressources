@@ -236,6 +236,8 @@ protected:
   bool m_useRaycasting;
   bool m_initFromTruepose;
   int m_numParticles;
+  //LC: use more particles for global localization service
+  int m_numGlobLocParticles;
   double m_sensorSampleDist;
 
   double m_nEffFactor;

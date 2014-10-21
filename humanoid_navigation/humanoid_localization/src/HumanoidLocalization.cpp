@@ -39,7 +39,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
       m_rngUniform(m_rngEngine, UniformDistributionT(0.0, 1.0)),
       m_nh(),m_privateNh("~"),
       m_odomFrameId("odom"), m_targetFrameId("odom"), m_baseFrameId("torso"), m_baseFootprintId("base_footprint"), m_globalFrameId("map"),
-      m_useRaycasting(true), m_initFromTruepose(false), m_numParticles(500),
+      m_useRaycasting(true), m_initFromTruepose(false), m_numParticles(500), m_numGlobLocParticles(1000),
       m_sensorSampleDist(0.2),
       m_nEffFactor(1.0), m_minParticleWeight(0.0),
       m_bestParticleIdx(-1), m_lastIMUMsgBuffer(5),
@@ -71,6 +71,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
     m_privateNh.param("init_global", m_initGlobal, m_initGlobal);
     m_privateNh.param("best_particle_as_mean", m_bestParticleAsMean, m_bestParticleAsMean);
     m_privateNh.param("num_particles", m_numParticles, m_numParticles);
+    m_privateNh.param("num_particles_global_localization", m_numGlobLocParticles, m_numGlobLocParticles);
     m_privateNh.param("neff_factor", m_nEffFactor, m_nEffFactor);
     m_privateNh.param("min_particle_weight", m_minParticleWeight, m_minParticleWeight);
 
@@ -871,7 +872,7 @@ void HumanoidLocalization::pointCloudCallback(const sensor_msgs::PointCloud2::Co
     }
     // end #1
 
-    if (!m_paused && (!m_receivedSensorData /*|| isAboveHeadMotionThreshold */|| isAboveMotionThreshold(odomPose))) {
+    if (!m_paused && (!m_receivedSensorData || isAboveHeadMotionThreshold || isAboveMotionThreshold(odomPose))) {
 
         // convert laser to point cloud first:
         PointCloud pc_filtered;
@@ -1122,8 +1123,8 @@ void HumanoidLocalization::initPoseCallback(const geometry_msgs::PoseWithCovaria
 bool HumanoidLocalization::globalLocalizationCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
 {
 
-    resample(m_numParticles*10);
-    ROS_INFO("Resampling to %f particles", (double)(m_numParticles*10));
+    resample(m_numGlobLocParticles);
+    ROS_INFO("Resampling to %f particles", (double)(m_numGlobLocParticles));
     initGlobal();
     //publish pose to reset robot_localization
     m_resetPose.pose.pose.position.x = 0.0;

@@ -54,6 +54,12 @@ public:
                           const Vector6d& initNoise,
                           UniformGeneratorT& rngUniform, NormalGeneratorT& rngNormal, double maxHeight, double minHeight);
 
+  //LC: added for local (re)localization
+  virtual void distributeLocally(Particles& particles,
+                                 double roll, double pitch, double yaw,
+                                 double x, double y, double z,
+                                 UniformGeneratorT& rngUniform, double dist_linear, double dist_angular);
+
   /// @return whether a map coordinate is occupied. Will return
   /// "false" if the coordinate does not exist in the map (e.g. out of bounds).
   virtual bool isOccupied(const octomap::point3d& position) const;

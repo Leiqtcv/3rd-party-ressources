@@ -62,11 +62,14 @@ void EndpointModel::integrateMeasurement(Particles& particles, const PointCloud&
       // search only for endpoint in tree
       octomap::point3d endPoint(it->x, it->y, it->z);
       float dist = m_distanceMap->getDistance(endPoint);
+//      if(dist > 1.5)
+//        std::cout << "Distance: " << dist << " (particle " << i << ")" << std::endl;
       float sigma_scaled = m_sigma;
       if (m_use_squared_error)
          sigma_scaled = (*ranges_it) * (*ranges_it) * (m_sigma);
       if (dist > 0.0){ // endpoint is inside map:
         particles[i].weight += logLikelihood(dist, sigma_scaled);
+//        ROS_INFO("LC: New weight of %f from particle %d of %f", particles[i].weight, i, (double)particles.size());
       } else { //assign weight of max.distance:
         particles[i].weight += logLikelihood(m_maxObstacleDistance, sigma_scaled);
       }

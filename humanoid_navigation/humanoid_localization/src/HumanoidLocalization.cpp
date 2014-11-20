@@ -39,7 +39,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
       m_rngUniform(m_rngEngine, UniformDistributionT(0.0, 1.0)),
       m_nh(),m_privateNh("~"),
       m_odomFrameId("odom"), m_targetFrameId("odom"), m_baseFrameId("torso"), m_baseFootprintId("base_footprint"), m_globalFrameId("map"),
-      m_useRaycasting(true), m_initFromTruepose(false), m_numParticles(500), m_numGlobLocParticles(1000),
+      m_useRaycasting(true), m_initFromTruepose(false), m_numParticles(500), m_numGlobLocParticles(1000), m_numLocalLocParticles(100),
       m_sensorSampleDist(0.2),
       m_nEffFactor(1.0), m_minParticleWeight(0.0),
       m_bestParticleIdx(-1), m_lastIMUMsgBuffer(5),
@@ -55,7 +55,9 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
       m_headYawRotationLastScan(0.0), m_headPitchRotationLastScan(0.0),
       m_useIMU(false),
       m_constrainMotionZ (false), m_constrainMotionRP(false), m_useTimer(false), m_timerPeriod(0.1),
-      m_maxHeight(2.0), m_minHeight(0.0)                                                                                // added by LC
+      // added by LC
+      m_maxHeight(2.0), m_minHeight(0.0),
+      m_distLinear(0.1), m_distAngular(0.1)
 {
 
     m_latest_transform.setData (tf::Transform(tf::createIdentityQuaternion()) );
@@ -72,6 +74,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
     m_privateNh.param("best_particle_as_mean", m_bestParticleAsMean, m_bestParticleAsMean);
     m_privateNh.param("num_particles", m_numParticles, m_numParticles);
     m_privateNh.param("num_particles_global_localization", m_numGlobLocParticles, m_numGlobLocParticles);
+    m_privateNh.param("num_particles_local_localization", m_numLocalLocParticles, m_numLocalLocParticles);
     m_privateNh.param("neff_factor", m_nEffFactor, m_nEffFactor);
     m_privateNh.param("min_particle_weight", m_minParticleWeight, m_minParticleWeight);
 
@@ -122,7 +125,8 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
 
     m_privateNh.param("max_height", m_maxHeight, m_maxHeight);
     m_privateNh.param("min_height", m_minHeight, m_minHeight);
-
+    m_privateNh.param("dist_linear", m_distLinear, m_distLinear);
+    m_privateNh.param("dist_angular", m_distAngular, m_distAngular);
 
     // motion model parameters
 
@@ -172,6 +176,8 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
 
     // ROS subscriptions last:
     m_globalLocSrv = m_nh.advertiseService("global_localization", &HumanoidLocalization::globalLocalizationCallback, this);
+    m_localLocSrv = m_nh.advertiseService("local_localization", &HumanoidLocalization::localLocalizationCallback, this);
+
 
     // subscription on laser, tf message filter
     m_laserSub = new message_filters::Subscriber<sensor_msgs::LaserScan>(m_nh, "scan", 100);
@@ -330,8 +336,8 @@ void HumanoidLocalization::initZRP(double& z, double& roll, double& pitch){
         pitch = m_initPose(4);
     }
 
-
 }
+
 void HumanoidLocalization::laserCallback(const sensor_msgs::LaserScanConstPtr& msg){
     ROS_DEBUG("Laser received (time: %f)", msg->header.stamp.toSec());
 
@@ -879,7 +885,7 @@ void HumanoidLocalization::pointCloudCallback(const sensor_msgs::PointCloud2::Co
         std::vector<float> rangesSparse;
         prepareGeneralPointCloud(msg, pc_filtered, rangesSparse);
 
-        ROS_INFO("LC: New localization!");
+        ROS_INFO("LC: New localization! %d , %d, %d , %d", (int)m_paused, (int)m_receivedSensorData, (int)isAboveHeadMotionThreshold, (int)isAboveMotionThreshold(odomPose));
 
         double maxRange = 10.0; // TODO #4: What is a maxRange for pointClouds? NaN? maxRange is expected to be a double and integrateMeasurement checks rangesSparse[i] > maxRange
         ROS_DEBUG("Updating Pose Estimate from a PointCloud with %zu points and %zu ranges", pc_filtered.size(), rangesSparse.size());
@@ -1137,6 +1143,23 @@ bool HumanoidLocalization::globalLocalizationCallback(std_srvs::Empty::Request& 
     return true;
 }
 
+bool HumanoidLocalization::localLocalizationCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res)
+{
+
+    resample(m_numLocalLocParticles);
+    ROS_INFO("Resampling to %f particles", (double)(m_numLocalLocParticles));
+    initLocal();
+    //publish pose to reset robot_localization
+//    m_resetPose.pose.pose.position.x = 0.0;
+//    m_resetPose.pose.pose.position.y = 0.0;
+//    m_resetPose.pose.pose.position.z = 0.0;
+//    m_resetPose.pose.pose.orientation = tf::createQuaternionMsgFromYaw(0.0);
+
+//    m_localizationResetPub.publish(m_resetPose);
+
+    return true;
+}
+
 void HumanoidLocalization::normalizeWeights() {
 
     double wmin = std::numeric_limits<double>::max();
@@ -1195,6 +1218,7 @@ void HumanoidLocalization::normalizeWeights() {
         }
 
     }
+
 }
 
 double HumanoidLocalization::getCumParticleWeight() const{
@@ -1265,6 +1289,44 @@ void HumanoidLocalization::initGlobal(){
 
 }
 
+void HumanoidLocalization::initLocal(){
+    ROS_INFO("Initializing with uniform distribution");
+
+    double roll, pitch, yaw, x, y, z;
+
+    tf::Stamped<tf::Pose> lastOdomPose;
+//    m_motionModel->getLastOdomPose(lastOdomPose);
+
+//    x = lastOdomPose.getOrigin().getX();
+//    y = lastOdomPose.getOrigin().getY();
+//    z = lastOdomPose.getOrigin().getZ();
+
+//    lastOdomPose.getBasis().getEulerYPR(yaw, pitch, roll);
+
+//    initZRP(z, roll, pitch);
+    tf::StampedTransform tf;
+    if (m_motionModel->getLastOdomPose(lastOdomPose) && m_motionModel->lookupLocalTransform(m_globalFrameId, lastOdomPose.stamp_, tf)){
+        x = tf.getOrigin().getX();
+        y = tf.getOrigin().getY();
+        z = tf.getOrigin().getZ();
+        tf.getBasis().getEulerYPR(yaw, pitch, roll);
+    }
+
+    ROS_INFO("LC: Current Pose is: x = %f, y = %f, z = %f, r = %f, p = %f, y = %f", x, y, z, roll, pitch, yaw);
+
+    m_mapModel->distributeLocally(m_particles, roll, pitch, yaw, x, y, z, m_rngUniform, m_distLinear, m_distAngular);
+
+//    m_mapModel->initGlobal(m_particles, z, roll, pitch, m_initNoiseStd, m_rngUniform, m_rngNormal, m_maxHeight, m_minHeight);
+
+    m_motionModel->reset();
+    m_receivedSensorData = false;
+    m_initialized = true;
+
+    publishPoseEstimate(ros::Time::now(), false);
+    ROS_INFO("Local localization done");
+
+}
+
 void HumanoidLocalization::publishPoseEstimate(const ros::Time& time, bool publish_eval){
 
     ////
@@ -1295,6 +1357,8 @@ void HumanoidLocalization::publishPoseEstimate(const ros::Time& time, bool publi
         bestParticlePose = getMeanParticlePose();
     else
         bestParticlePose = getBestParticlePose();
+
+//    ROS_INFO("LC: Best particle pose weight: %f", m_particles.at(getBestParticleIdx()).weight);
 
     tf::poseTFToMsg(bestParticlePose,p.pose.pose);
     m_resetPose = p;

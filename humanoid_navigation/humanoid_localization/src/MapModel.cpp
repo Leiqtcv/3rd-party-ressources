@@ -174,6 +174,46 @@ void MapModel::initGlobal(Particles& particles, double z, double roll, double pi
 
 }
 
+//LC: added for local (re)localization
+void MapModel::distributeLocally(Particles& particles, double roll, double pitch, double yaw,
+                                    double x, double y, double z,
+                                    UniformGeneratorT& rngUniform, double dist_linear, double dist_angular){        //maxHeight added by LC
+  double sizeX,sizeY,sizeZ, minX, minY, minZ;
+  //LC: get total map size
+  m_map->getMetricSize(sizeX,sizeY,sizeZ);
+  //LC: get minimum values of map bounding box
+  m_map->getMetricMin(minX, minY, minZ);
+
+  double weight = 1.0 / particles.size();
+  Particles::iterator it = particles.begin();
+  while (true){
+    if (it == particles.end())
+      break;
+
+    // obtain a pose hypothesis:
+    double x_new = x + dist_linear * ((rngUniform() - 0.5) * 2);
+    double y_new = y + dist_linear * ((rngUniform() - 0.5) * 2);
+    double z_new = z + dist_linear * ((rngUniform() - 0.5) * 2);
+
+    double roll_new = roll + dist_angular * ((rngUniform() - 0.5) * 2);
+    double pitch_new = pitch + dist_angular * ((rngUniform() - 0.5) * 2);
+    double yaw_new = yaw + dist_angular * ((rngUniform() - 0.5) * 2);
+
+    //set new pose
+    it->pose.getOrigin().setX(x_new);
+    it->pose.getOrigin().setY(y_new);
+    it->pose.getOrigin().setZ(z_new);
+
+    //set orientation
+    it->pose.setRotation(tf::createQuaternionFromRPY(roll_new, pitch_new, yaw_new));
+
+    it->weight = weight;
+    it++;
+
+  }
+
+}
+
 //LC: replaced function
 //void MapModel::getHeightlist(double x, double y, double totalHeight, std::vector<double>& heights){
 //  double minX, minY, minZ, maxX, maxY, maxZ;

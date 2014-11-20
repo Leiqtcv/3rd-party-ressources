@@ -91,6 +91,8 @@ public:
   virtual void pointCloudCallback(const sensor_msgs::PointCloud2::ConstPtr& msg);
   void initPoseCallback(const geometry_msgs::PoseWithCovarianceStampedConstPtr& msg);
   bool globalLocalizationCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
+  //LC: local (re)localization callback to distribute particles around current pose so that the localization can be improved
+  bool localLocalizationCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
   void pauseLocalizationCallback(const std_msgs::BoolConstPtr& msg);
   /// pause localization by service call
   bool pauseLocalizationSrvCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res);
@@ -116,6 +118,8 @@ public:
 
   /// function call for global initialization (called by globalLocalizationCallback)
   void initGlobal();
+  /// function call for local initialization (called by localLocalizationCallback)
+  void initLocal();
 
   // needed for pointcloud callback (from OctomapServer)
   static void filterGroundPlane(const PointCloud& pc, PointCloud& ground, PointCloud& nonground, double groundFilterDistance, double groundFilterAngle, double groundFilterPlaneDistance);
@@ -222,7 +226,7 @@ protected:
                  m_poseArrayPub, m_bestPosePub, m_nEffPub,
                  m_filteredPointCloudPub, m_localizationResetPub;
   ros::Subscriber m_imuSub;
-  ros::ServiceServer m_globalLocSrv, m_pauseLocSrv, m_resumeLocSrv;
+  ros::ServiceServer m_globalLocSrv, m_localLocSrv, m_pauseLocSrv, m_resumeLocSrv;
   tf::TransformListener m_tfListener;
   tf::TransformBroadcaster m_tfBroadcaster;
   ros::Timer m_timer;
@@ -238,6 +242,8 @@ protected:
   int m_numParticles;
   //LC: use more particles for global localization service
   int m_numGlobLocParticles;
+  //LC: specify number of particles for local (re)localization service
+  int m_numLocalLocParticles;
   double m_sensorSampleDist;
 
   double m_nEffFactor;
@@ -303,6 +309,8 @@ protected:
   // added by LC
   double m_maxHeight;
   double m_minHeight;
+  double m_distLinear;
+  double m_distAngular;
 };
 }
 

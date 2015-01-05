@@ -18,6 +18,9 @@
 //added by LC
 #include <boost/assign/list_of.hpp>
 
+//LC: added for service
+#include <std_srvs/Empty.h>
+
 namespace fovis_ros
 {
 
@@ -42,12 +45,22 @@ protected:
     pose_pub_ = nh_local_.advertise<geometry_msgs::PoseStamped>("pose", 1);
     info_pub_ = nh_local_.advertise<FovisInfo>("info", 1);
     features_pub_ = it_.advertise("features", 1);
+
+    m_pauseLocServer = nh_local_.advertiseService("/toggle_fovis", &OdometerBase::toggleActiveStateCallback, this);
+    paused = false;
   }
 
   virtual ~OdometerBase()
   {
     if (visual_odometer_) delete visual_odometer_;
     if (rectification_) delete rectification_;
+  }
+
+  //LC: added service to (de-)activate fovis localization tracking
+
+  bool toggleActiveStateCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
+      paused = !paused;
+      return true;
   }
 
   const fovis::VisualOdometryOptions& getOptions() const
@@ -79,170 +92,172 @@ protected:
    * been fed with data.
    */
   void process(
-      const sensor_msgs::ImageConstPtr& image_msg, 
-      const sensor_msgs::CameraInfoConstPtr& info_msg)
+          const sensor_msgs::ImageConstPtr& image_msg,
+          const sensor_msgs::CameraInfoConstPtr& info_msg)
   {
-    ros::WallTime start_time = ros::WallTime::now();
+      if(!paused) {
+          ros::WallTime start_time = ros::WallTime::now();
 
-    bool first_run = false;
-    if (visual_odometer_ == NULL)
-    {
-      first_run = true;
-      initOdometer(info_msg);
-    }
-    ROS_ASSERT(visual_odometer_ != NULL);
-    ROS_ASSERT(depth_source_ != NULL);
+          bool first_run = false;
+          if (visual_odometer_ == NULL)
+          {
+              first_run = true;
+              initOdometer(info_msg);
+          }
+          ROS_ASSERT(visual_odometer_ != NULL);
+          ROS_ASSERT(depth_source_ != NULL);
 
-    // convert image if necessary
-    uint8_t *image_data;
-    cv_bridge::CvImageConstPtr cv_ptr = 
-      cv_bridge::toCvShare(image_msg, sensor_msgs::image_encodings::MONO8);
-    image_data = cv_ptr->image.data;
-    int step = cv_ptr->image.step[0];
+          // convert image if necessary
+          uint8_t *image_data;
+          cv_bridge::CvImageConstPtr cv_ptr =
+                  cv_bridge::toCvShare(image_msg, sensor_msgs::image_encodings::MONO8);
+          image_data = cv_ptr->image.data;
+          int step = cv_ptr->image.step[0];
 
-    ROS_ASSERT(step == static_cast<int>(image_msg->width));
+          ROS_ASSERT(step == static_cast<int>(image_msg->width));
 
-    // pass image to odometer
-    visual_odometer_->processFrame(image_data, depth_source_);
+          // pass image to odometer
+          visual_odometer_->processFrame(image_data, depth_source_);
 
-    // skip visualization on first run as no reference image is present
-    if (!first_run && features_pub_.getNumSubscribers() > 0)
-    {
-      cv_bridge::CvImage cv_image;
-      cv_image.header.stamp = image_msg->header.stamp;
-      cv_image.header.frame_id = image_msg->header.frame_id;
-      cv_image.encoding = sensor_msgs::image_encodings::BGR8;
-      cv_image.image = visualization::paint(visual_odometer_);
-      features_pub_.publish(cv_image.toImageMsg());
-    }
+          // skip visualization on first run as no reference image is present
+          if (!first_run && features_pub_.getNumSubscribers() > 0)
+          {
+              cv_bridge::CvImage cv_image;
+              cv_image.header.stamp = image_msg->header.stamp;
+              cv_image.header.frame_id = image_msg->header.frame_id;
+              cv_image.encoding = sensor_msgs::image_encodings::BGR8;
+              cv_image.image = visualization::paint(visual_odometer_);
+              features_pub_.publish(cv_image.toImageMsg());
+          }
 
-    // create odometry and pose messages
-    odom_msg_.header.stamp = image_msg->header.stamp;
-    odom_msg_.header.frame_id = odom_frame_id_;
-    odom_msg_.child_frame_id = base_link_frame_id_;
-    
-    pose_msg_.header.stamp = image_msg->header.stamp;
-    pose_msg_.header.frame_id = base_link_frame_id_;
+          // create odometry and pose messages
+          odom_msg_.header.stamp = image_msg->header.stamp;
+          odom_msg_.header.frame_id = odom_frame_id_;
+          odom_msg_.child_frame_id = base_link_frame_id_;
 
-    // on success, start fill message and tf
-    fovis::MotionEstimateStatusCode status = 
-      visual_odometer_->getMotionEstimateStatus();
-    if (status == fovis::SUCCESS)
-    {
-      // get pose and motion from odometer
-      const Eigen::Isometry3d& pose = visual_odometer_->getPose();
-      tf::Transform sensor_pose;
-      eigenToTF(pose, sensor_pose);
-      // calculate transform of odom to base based on base to sensor 
-      // and sensor to sensor
-      tf::StampedTransform current_base_to_sensor;
-      getBaseToSensorTransform(
-          image_msg->header.stamp, image_msg->header.frame_id, 
-          current_base_to_sensor);
-      tf::Transform base_transform = 
-        initial_base_to_sensor_ * sensor_pose * current_base_to_sensor.inverse();
+          pose_msg_.header.stamp = image_msg->header.stamp;
+          pose_msg_.header.frame_id = base_link_frame_id_;
 
-      // publish transform
-      if (publish_tf_)
-      {
-        tf_broadcaster_.sendTransform(
-            tf::StampedTransform(base_transform, image_msg->header.stamp,
-            odom_frame_id_, base_link_frame_id_));
+          // on success, start fill message and tf
+          fovis::MotionEstimateStatusCode status =
+                  visual_odometer_->getMotionEstimateStatus();
+          if (status == fovis::SUCCESS)
+          {
+              // get pose and motion from odometer
+              const Eigen::Isometry3d& pose = visual_odometer_->getPose();
+              tf::Transform sensor_pose;
+              eigenToTF(pose, sensor_pose);
+              // calculate transform of odom to base based on base to sensor
+              // and sensor to sensor
+              tf::StampedTransform current_base_to_sensor;
+              getBaseToSensorTransform(
+                          image_msg->header.stamp, image_msg->header.frame_id,
+                          current_base_to_sensor);
+              tf::Transform base_transform =
+                      initial_base_to_sensor_ * sensor_pose * current_base_to_sensor.inverse();
+
+              // publish transform
+              if (publish_tf_)
+              {
+                  tf_broadcaster_.sendTransform(
+                              tf::StampedTransform(base_transform, image_msg->header.stamp,
+                                                   odom_frame_id_, base_link_frame_id_));
+              }
+
+              // fill odometry and pose msg
+              tf::poseTFToMsg(base_transform, odom_msg_.pose.pose);
+              pose_msg_.pose = odom_msg_.pose.pose;
+
+              // robot_pose_ekf doesn't accept all-zeros in the covariance matrix
+              double visualCovariance = 0.2;    //TODO: parameter
+              odom_msg_.pose.covariance = boost::assign::list_of(visualCovariance)(0)(0)(0)(0)(0)
+                      (0)(visualCovariance)(0)(0)(0)(0)
+                      (0)(0)(visualCovariance)(0)(0)(0)
+                      (0)(0)(0)(visualCovariance)(0)(0)
+                      (0)(0)(0)(0)(visualCovariance)(0)
+                      (0)(0)(0)(0)(0)(visualCovariance);
+
+              // can we calculate velocities?
+              double dt = last_time_.isZero() ?
+                          0.0 : (image_msg->header.stamp - last_time_).toSec();
+              if (dt > 0.0)
+              {
+                  const Eigen::Isometry3d& motion = visual_odometer_->getMotionEstimate();
+                  tf::Transform sensor_motion;
+                  eigenToTF(motion, sensor_motion);
+                  // in theory the first factor would have to be base_to_sensor of t-1
+                  // and not of t (irrelevant for static base to sensor anyways)
+                  tf::Transform delta_base_transform =
+                          current_base_to_sensor * sensor_motion * current_base_to_sensor.inverse();
+                  // calculate twist from delta transform
+                  odom_msg_.twist.twist.linear.x = delta_base_transform.getOrigin().getX() / dt;
+                  odom_msg_.twist.twist.linear.y = delta_base_transform.getOrigin().getY() / dt;
+                  odom_msg_.twist.twist.linear.z = delta_base_transform.getOrigin().getZ() / dt;
+                  tf::Quaternion delta_rot = delta_base_transform.getRotation();
+                  double angle = delta_rot.getAngle();
+                  tf::Vector3 axis = delta_rot.getAxis();
+                  tf::Vector3 angular_twist = axis * angle / dt;
+                  odom_msg_.twist.twist.angular.x = angular_twist.x();
+                  odom_msg_.twist.twist.angular.y = angular_twist.y();
+                  odom_msg_.twist.twist.angular.z = angular_twist.z();
+
+                  // add covariance
+                  const Eigen::MatrixXd& motion_cov = visual_odometer_->getMotionEstimateCov();
+                  for (int i=0;i<6;i++)
+                      for (int j=0;j<6;j++)
+                          odom_msg_.twist.covariance[j*6+i] = motion_cov(i,j);
+              }
+              // TODO integrate covariance for pose covariance
+              last_time_ = image_msg->header.stamp;
+          }
+          else
+          {
+              // Previous messages with the current timestamp will be published
+              ROS_WARN_STREAM("fovis odometry status: " <<
+                              fovis::MotionEstimateStatusCodeStrings[status]);
+              last_time_ = ros::Time(0);
+          }
+          odom_pub_.publish(odom_msg_);
+          pose_pub_.publish(pose_msg_);
+
+          // create and publish fovis info msg
+          FovisInfo fovis_info_msg;
+          fovis_info_msg.header.stamp = image_msg->header.stamp;
+          fovis_info_msg.change_reference_frame =
+                  visual_odometer_->getChangeReferenceFrames();
+          fovis_info_msg.fast_threshold =
+                  visual_odometer_->getFastThreshold();
+          const fovis::OdometryFrame* frame =
+                  visual_odometer_->getTargetFrame();
+          fovis_info_msg.num_total_detected_keypoints =
+                  frame->getNumDetectedKeypoints();
+          fovis_info_msg.num_total_keypoints = frame->getNumKeypoints();
+          fovis_info_msg.num_detected_keypoints.resize(frame->getNumLevels());
+          fovis_info_msg.num_keypoints.resize(frame->getNumLevels());
+          for (int i = 0; i < frame->getNumLevels(); ++i)
+          {
+              fovis_info_msg.num_detected_keypoints[i] =
+                      frame->getLevel(i)->getNumDetectedKeypoints();
+              fovis_info_msg.num_keypoints[i] =
+                      frame->getLevel(i)->getNumKeypoints();
+          }
+          const fovis::MotionEstimator* estimator =
+                  visual_odometer_->getMotionEstimator();
+          fovis_info_msg.motion_estimate_status_code =
+                  estimator->getMotionEstimateStatus();
+          fovis_info_msg.motion_estimate_status =
+                  fovis::MotionEstimateStatusCodeStrings[
+                  fovis_info_msg.motion_estimate_status_code];
+          fovis_info_msg.num_matches = estimator->getNumMatches();
+          fovis_info_msg.num_inliers = estimator->getNumInliers();
+          fovis_info_msg.num_reprojection_failures =
+                  estimator->getNumReprojectionFailures();
+          fovis_info_msg.motion_estimate_valid =
+                  estimator->isMotionEstimateValid();
+          ros::WallDuration time_elapsed = ros::WallTime::now() - start_time;
+          fovis_info_msg.runtime = time_elapsed.toSec();
+          info_pub_.publish(fovis_info_msg);
       }
-
-      // fill odometry and pose msg
-      tf::poseTFToMsg(base_transform, odom_msg_.pose.pose);
-      pose_msg_.pose = odom_msg_.pose.pose;
-
-      // robot_pose_ekf doesn't accept all-zeros in the covariance matrix
-      double visualCovariance = 0.2;    //TODO: parameter
-      odom_msg_.pose.covariance = boost::assign::list_of(visualCovariance)(0)(0)(0)(0)(0)
-                                                     (0)(visualCovariance)(0)(0)(0)(0)
-                                                     (0)(0)(visualCovariance)(0)(0)(0)
-                                                     (0)(0)(0)(visualCovariance)(0)(0)
-                                                     (0)(0)(0)(0)(visualCovariance)(0)
-                                                     (0)(0)(0)(0)(0)(visualCovariance);
-
-      // can we calculate velocities?
-      double dt = last_time_.isZero() ? 
-        0.0 : (image_msg->header.stamp - last_time_).toSec();
-      if (dt > 0.0)
-      {
-        const Eigen::Isometry3d& motion = visual_odometer_->getMotionEstimate();
-        tf::Transform sensor_motion;
-        eigenToTF(motion, sensor_motion);
-        // in theory the first factor would have to be base_to_sensor of t-1
-        // and not of t (irrelevant for static base to sensor anyways)
-        tf::Transform delta_base_transform = 
-          current_base_to_sensor * sensor_motion * current_base_to_sensor.inverse();
-        // calculate twist from delta transform
-        odom_msg_.twist.twist.linear.x = delta_base_transform.getOrigin().getX() / dt;
-        odom_msg_.twist.twist.linear.y = delta_base_transform.getOrigin().getY() / dt;
-        odom_msg_.twist.twist.linear.z = delta_base_transform.getOrigin().getZ() / dt;
-        tf::Quaternion delta_rot = delta_base_transform.getRotation();
-        double angle = delta_rot.getAngle();
-        tf::Vector3 axis = delta_rot.getAxis();
-        tf::Vector3 angular_twist = axis * angle / dt;
-        odom_msg_.twist.twist.angular.x = angular_twist.x();
-        odom_msg_.twist.twist.angular.y = angular_twist.y();
-        odom_msg_.twist.twist.angular.z = angular_twist.z();
-
-        // add covariance
-        const Eigen::MatrixXd& motion_cov = visual_odometer_->getMotionEstimateCov();
-        for (int i=0;i<6;i++)
-          for (int j=0;j<6;j++)
-            odom_msg_.twist.covariance[j*6+i] = motion_cov(i,j);
-      }
-      // TODO integrate covariance for pose covariance
-      last_time_ = image_msg->header.stamp;
-    }
-    else
-    {
-      // Previous messages with the current timestamp will be published
-      ROS_WARN_STREAM("fovis odometry status: " << 
-          fovis::MotionEstimateStatusCodeStrings[status]);
-      last_time_ = ros::Time(0);
-    }
-    odom_pub_.publish(odom_msg_);
-    pose_pub_.publish(pose_msg_);
-
-    // create and publish fovis info msg
-    FovisInfo fovis_info_msg;
-    fovis_info_msg.header.stamp = image_msg->header.stamp;
-    fovis_info_msg.change_reference_frame = 
-      visual_odometer_->getChangeReferenceFrames();
-    fovis_info_msg.fast_threshold =
-      visual_odometer_->getFastThreshold();
-    const fovis::OdometryFrame* frame = 
-      visual_odometer_->getTargetFrame();
-    fovis_info_msg.num_total_detected_keypoints =
-      frame->getNumDetectedKeypoints();
-    fovis_info_msg.num_total_keypoints = frame->getNumKeypoints();
-    fovis_info_msg.num_detected_keypoints.resize(frame->getNumLevels());
-    fovis_info_msg.num_keypoints.resize(frame->getNumLevels());
-    for (int i = 0; i < frame->getNumLevels(); ++i)
-    {
-      fovis_info_msg.num_detected_keypoints[i] =
-        frame->getLevel(i)->getNumDetectedKeypoints();
-      fovis_info_msg.num_keypoints[i] =
-        frame->getLevel(i)->getNumKeypoints();
-    }
-    const fovis::MotionEstimator* estimator = 
-      visual_odometer_->getMotionEstimator();
-    fovis_info_msg.motion_estimate_status_code =
-      estimator->getMotionEstimateStatus();
-    fovis_info_msg.motion_estimate_status = 
-      fovis::MotionEstimateStatusCodeStrings[
-        fovis_info_msg.motion_estimate_status_code];
-    fovis_info_msg.num_matches = estimator->getNumMatches();
-    fovis_info_msg.num_inliers = estimator->getNumInliers();
-    fovis_info_msg.num_reprojection_failures =
-      estimator->getNumReprojectionFailures();
-    fovis_info_msg.motion_estimate_valid = 
-      estimator->isMotionEstimateValid();
-    ros::WallDuration time_elapsed = ros::WallTime::now() - start_time;
-    fovis_info_msg.runtime = time_elapsed.toSec();
-    info_pub_.publish(fovis_info_msg);
   }
 
 
@@ -377,6 +392,10 @@ private:
   ros::Publisher info_pub_;
   image_transport::Publisher features_pub_;
   image_transport::ImageTransport it_;
+
+  //LC: localization (de-)activating service
+  ros::ServiceServer m_pauseLocServer;
+  bool paused;
 };
 
 } // end of namespace

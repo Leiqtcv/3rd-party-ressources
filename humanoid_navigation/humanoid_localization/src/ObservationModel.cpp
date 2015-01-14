@@ -58,7 +58,7 @@ ObservationModel::~ObservationModel() {
 void ObservationModel::integratePoseMeasurement(Particles& particles, double poseRoll, double posePitch, const tf::StampedTransform& footprintToTorso){
   // TODO: move to HumanoidLocalization, skip individual parts if z/rp constrained
   double poseHeight = footprintToTorso.getOrigin().getZ();
-  ROS_DEBUG("Pose measurement z=%f R=%f P=%f", poseHeight, poseRoll, posePitch);
+  ROS_INFO("Pose measurement z=%f R=%f P=%f", poseHeight, poseRoll, posePitch);
   // TODO cluster xy of particles => speedup
 #pragma omp parallel for
   for (unsigned i=0; i < particles.size(); ++i){
@@ -70,8 +70,12 @@ void ObservationModel::integratePoseMeasurement(Particles& particles, double pos
 
     // integrate height measurement (z)
     double heightError;
-    if (getHeightError(particles[i],footprintToTorso, heightError))
+    if (getHeightError(particles[i],footprintToTorso, heightError)) {
       particles[i].weight += m_weightZ * logLikelihood(heightError, m_sigmaZ);
+//        std::cout << "Height Error = " << heightError << std::endl;
+    }else {
+        std::cout << "Height Error determination unsuccessfull" << std::endl;
+    }
 
 
   }

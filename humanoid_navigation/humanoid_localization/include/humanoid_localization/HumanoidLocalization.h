@@ -224,7 +224,7 @@ protected:
 
   ros::Publisher m_posePub, m_poseEvalPub, m_poseOdomPub, m_poseTruePub,
                  m_poseArrayPub, m_bestPosePub, m_nEffPub,
-                 m_filteredPointCloudPub, m_localizationResetPub;
+                 m_filteredPointCloudPub, m_localizationResetPub, m_bestPoseRMSPub;
   ros::Subscriber m_imuSub;
   ros::ServiceServer m_globalLocSrv, m_localLocSrv, m_pauseLocSrv, m_resumeLocSrv;
   tf::TransformListener m_tfListener;
@@ -258,6 +258,7 @@ protected:
 
   Particles m_particles;
   int m_bestParticleIdx;
+  float m_bestParticleRMS;
   tf::Pose m_odomPose; // incrementally added odometry pose (=dead reckoning)
   geometry_msgs::PoseArray m_poseArray; // particles as PoseArray (preallocated)
   geometry_msgs::PoseWithCovarianceStamped m_resetPose;

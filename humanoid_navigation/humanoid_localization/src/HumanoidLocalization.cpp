@@ -42,7 +42,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
       m_useRaycasting(true), m_initFromTruepose(false), m_numParticles(500), m_numGlobLocParticles(1000), m_numLocalLocParticles(100),
       m_sensorSampleDist(0.2),
       m_nEffFactor(1.0), m_minParticleWeight(0.0),
-      m_bestParticleIdx(-1), m_lastIMUMsgBuffer(5),
+      m_bestParticleIdx(-1), m_bestParticleRMS(1.0), m_lastIMUMsgBuffer(5),
       m_bestParticleAsMean(true),
       m_receivedSensorData(false), m_initialized(false), m_initGlobal(false), m_paused(false),
       m_syncedTruepose(false),
@@ -159,6 +159,7 @@ HumanoidLocalization::HumanoidLocalization(unsigned randomSeed)
     m_poseOdomPub = m_privateNh.advertise<geometry_msgs::PoseStamped>("pose_odom_sync", 10);
     m_poseArrayPub = m_privateNh.advertise<geometry_msgs::PoseArray>("particlecloud", 10);
     m_bestPosePub = m_privateNh.advertise<geometry_msgs::PoseArray>("best_particle", 10);
+    m_bestPoseRMSPub = m_privateNh.advertise<std_msgs::Float32>("best_particle_rms", 10);
     m_nEffPub = m_privateNh.advertise<std_msgs::Float32>("n_eff", 10);
     m_filteredPointCloudPub = m_privateNh.advertise<sensor_msgs::PointCloud2>("filtered_cloud", 1);
     m_localizationResetPub = m_nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("set_pose", 1);
@@ -298,8 +299,10 @@ void HumanoidLocalization::reset(){
 
 #if defined(_BENCH_TIME)
     double dt = (ros::WallTime::now() - startTime).toSec();
-    ROS_INFO_STREAM("Initialization of "<< m_numParticles << " particles took "
-                    << dt << "s (="<<dt/m_numParticles<<"s/particle)");
+//    ROS_INFO_STREAM("Initialization of "<< m_numParticles << " particles took "
+//                    << dt << "s (="<<dt/m_numParticles<<"s/particle)");
+    ROS_INFO_STREAM("Initialization of "<< m_particles.size() << " particles took "
+                    << dt << "s (="<<dt/m_particles.size()<<"s/particle)");
 #endif
 
 
@@ -521,9 +524,10 @@ bool HumanoidLocalization::localizeWithMeasurement(const PointCloud& pc_filtered
     m_receivedSensorData = true;
 
     double dt = (ros::WallTime::now() - startTime).toSec();
-    ROS_INFO_STREAM("Observations for "<< m_numParticles << " particles took "
-                    << dt << "s (="<<dt/m_numParticles<<"s/particle)");
-
+//    ROS_INFO_STREAM("Observations for "<< m_numParticles << " particles took "
+//                    << dt << "s (="<<dt/m_numParticles<<"s/particle)");
+    ROS_INFO_STREAM("Observations for "<< m_particles.size() << " particles took "
+                    << dt << "s (="<<dt/m_particles.size()<<"s/particle)");
     return true;
 }
 
@@ -889,6 +893,10 @@ void HumanoidLocalization::pointCloudCallback(const sensor_msgs::PointCloud2::Co
 
         double maxRange = 10.0; // TODO #4: What is a maxRange for pointClouds? NaN? maxRange is expected to be a double and integrateMeasurement checks rangesSparse[i] > maxRange
         ROS_DEBUG("Updating Pose Estimate from a PointCloud with %zu points and %zu ranges", pc_filtered.size(), rangesSparse.size());
+        std::stringstream filename;
+        std::string txt = std::string("/home/sysadm/octomaps/test/loc_filtered.pcd");
+        filename << txt;
+        pcl::io::savePCDFileBinary(filename.str(), pc_filtered);
         sensor_integrated = localizeWithMeasurement(pc_filtered, rangesSparse, maxRange);
     }
     if(!sensor_integrated){ // no observation necessary: propagate particles forward by full interval
@@ -1173,6 +1181,8 @@ void HumanoidLocalization::normalizeWeights() {
         if (weight > wmax){
             wmax = weight;
             m_bestParticleIdx = i;
+            m_bestParticleRMS = m_particles[i].rms;
+            ROS_INFO("Best particle: %d \t Weight = %f \t RMS = %f", i, weight, m_bestParticleRMS);
         }
     }
     if (wmin > wmax){
@@ -1247,6 +1257,8 @@ void HumanoidLocalization::resample(unsigned numParticles){
     double cumWeight=0;
     std::vector<unsigned> indices(numParticles);
 
+//    m_bestParticleRMS = m_particles[m_bestParticleRMS].rms;
+
     unsigned n=0;
     for (unsigned i = 0; i < m_particles.size(); ++i){
         cumWeight += m_particles[i].weight;
@@ -1292,7 +1304,7 @@ void HumanoidLocalization::initGlobal(){
 void HumanoidLocalization::initLocal(){
     ROS_INFO("Initializing with uniform distribution");
 
-    double roll, pitch, yaw, x, y, z;
+    double roll, pitch, yaw, x, y, z, zDummy;
 
     tf::Stamped<tf::Pose> lastOdomPose;
 //    m_motionModel->getLastOdomPose(lastOdomPose);
@@ -1311,6 +1323,8 @@ void HumanoidLocalization::initLocal(){
         z = tf.getOrigin().getZ();
         tf.getBasis().getEulerYPR(yaw, pitch, roll);
     }
+
+    initZRP(zDummy, roll, pitch);
 
     ROS_INFO("LC: Current Pose is: x = %f, y = %f, z = %f, r = %f, p = %f, y = %f", x, y, z, roll, pitch, yaw);
 
@@ -1359,6 +1373,7 @@ void HumanoidLocalization::publishPoseEstimate(const ros::Time& time, bool publi
         bestParticlePose = getBestParticlePose();
 
 //    ROS_INFO("LC: Best particle pose weight: %f", m_particles.at(getBestParticleIdx()).weight);
+//    ROS_INFO("LC: Best particle pose rms: %f of particle %d", m_particles.at(getBestParticleIdx()).rms, getBestParticleIdx());
 
     tf::poseTFToMsg(bestParticlePose,p.pose.pose);
     m_resetPose = p;
@@ -1373,6 +1388,10 @@ void HumanoidLocalization::publishPoseEstimate(const ros::Time& time, bool publi
     bestPose.poses.resize(1);
     tf::poseTFToMsg(bestParticlePose, bestPose.poses[0]);
     m_bestPosePub.publish(bestPose);
+
+    std_msgs::Float32 poseRMSMsg;
+    poseRMSMsg.data = m_bestParticleRMS;
+    m_bestPoseRMSPub.publish(poseRMSMsg);
 
     ////
     // send incremental odom pose (synced to localization)
@@ -1413,7 +1432,8 @@ void HumanoidLocalization::publishPoseEstimate(const ros::Time& time, bool publi
 }
 
 unsigned HumanoidLocalization::getBestParticleIdx() const{
-    if (m_bestParticleIdx < 0 || m_bestParticleIdx >= m_numParticles){
+//    if (m_bestParticleIdx < 0 || m_bestParticleIdx >= m_numParticles){
+    if (m_bestParticleIdx < 0 || m_bestParticleIdx >= m_particles.size()){
         ROS_WARN("Index (%d) of best particle not valid, using 0 instead", m_bestParticleIdx);
         return 0;
     }
@@ -1449,7 +1469,10 @@ tf::Pose HumanoidLocalization::getMeanParticlePose() const{
     // just in case weights are not normalized:
     meanPose.getOrigin() /= totalWeight;
     // TODO: only rough estimate of mean rotation, asserts normalized weights!
-    meanPose.getBasis() = meanPose.getBasis().scaled(tf::Vector3(1.0/m_numParticles, 1.0/m_numParticles, 1.0/m_numParticles));
+//    meanPose.getBasis() = meanPose.getBasis().scaled(tf::Vector3(1.0/m_numParticles, 1.0/m_numParticles, 1.0/m_numParticles));
+    double noOfParticles = m_particles.size();
+    meanPose.getBasis() = meanPose.getBasis().scaled(tf::Vector3(1.0/noOfParticles, 1.0/noOfParticles, 1.0/noOfParticles));
+
 
     // Apparently we need to normalize again
     meanPose.setRotation(meanPose.getRotation().normalized());

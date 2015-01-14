@@ -46,7 +46,9 @@ protected:
     info_pub_ = nh_local_.advertise<FovisInfo>("info", 1);
     features_pub_ = it_.advertise("features", 1);
 
-    m_pauseLocServer = nh_local_.advertiseService("/toggle_fovis", &OdometerBase::toggleActiveStateCallback, this);
+    m_pauseLocServer = nh_local_.advertiseService("/pause_fovis", &OdometerBase::pauseCallback, this);
+    m_resumeLocServer = nh_local_.advertiseService("/resume_fovis", &OdometerBase::resumeCallback, this);
+
     paused = false;
   }
 
@@ -58,8 +60,23 @@ protected:
 
   //LC: added service to (de-)activate fovis localization tracking
 
-  bool toggleActiveStateCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
-      paused = !paused;
+  bool pauseCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
+      if (paused){
+//          std::cout << "Received call to pause visual odometry but it is already paused!" << std::endl;
+      }else {
+          paused = true;
+          std::cout << "Visual odometry paused" << std::endl;
+      }
+      return true;
+  }
+
+  bool resumeCallback(std_srvs::Empty::Request& req, std_srvs::Empty::Response& res) {
+      if (!paused){
+//          std::cout << "Received call to resume visual odometry but it is not paused!" << std::endl;
+      }else {
+          paused = false;
+          std::cout << "Visual odometry resumed" << std::endl;
+      }
       return true;
   }
 
@@ -257,6 +274,9 @@ protected:
           ros::WallDuration time_elapsed = ros::WallTime::now() - start_time;
           fovis_info_msg.runtime = time_elapsed.toSec();
           info_pub_.publish(fovis_info_msg);
+      }else {
+          odom_pub_.publish(odom_msg_);
+          pose_pub_.publish(pose_msg_);
       }
   }
 
@@ -393,8 +413,9 @@ private:
   image_transport::Publisher features_pub_;
   image_transport::ImageTransport it_;
 
-  //LC: localization (de-)activating service
+  //LC: localization (de-)activating services
   ros::ServiceServer m_pauseLocServer;
+  ros::ServiceServer m_resumeLocServer;
   bool paused;
 };
 

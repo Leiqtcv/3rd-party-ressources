@@ -42,6 +42,7 @@ namespace humanoid_localization{
 /// Particle consists of a pose and a weight
 struct Particle{
   double weight;
+  double rms;
   tf::Pose pose;
 };
 

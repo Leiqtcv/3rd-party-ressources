@@ -195,9 +195,20 @@ void MapModel::distributeLocally(Particles& particles, double roll, double pitch
     double y_new = y + dist_linear * ((rngUniform() - 0.5) * 2);
     double z_new = z + dist_linear * ((rngUniform() - 0.5) * 2);
 
-    double roll_new = roll + dist_angular * ((rngUniform() - 0.5) * 2);
-    double pitch_new = pitch + dist_angular * ((rngUniform() - 0.5) * 2);
+    double roll_new = roll;// + dist_angular * ((rngUniform() - 0.5) * 2);
+    double pitch_new = pitch;// + dist_angular * ((rngUniform() - 0.5) * 2);
     double yaw_new = yaw + dist_angular * ((rngUniform() - 0.5) * 2);
+
+    if(it == particles.begin()) {
+        // obtain a pose hypothesis:
+        x_new = x;
+        y_new = y;
+        z_new = z;
+
+        roll_new = roll;
+        pitch_new = pitch;
+        yaw_new = yaw;
+    }
 
     //set new pose
     it->pose.getOrigin().setX(x_new);
@@ -252,7 +263,7 @@ void MapModel::getHeightlist(double x, double y, double minHeight, double maxHei
 
   double res = m_map->getResolution();
 
-  double z =  minZ + res;
+  double z =  minZ;
 
   while (z <= maxHeight && z <= maxZ){
     if (!isOccupied(octomap::point3d(x, y, z))){

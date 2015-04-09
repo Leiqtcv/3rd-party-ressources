@@ -1,10 +1,11 @@
 cmake_minimum_required(VERSION 2.8.3)
 project(humanoid_localization)
+set(Boost_DEBUG ON)
 
-find_package(catkin REQUIRED COMPONENTS roscpp pcl_conversions pcl_ros message_filters sensor_msgs)
+find_package(catkin REQUIRED COMPONENTS cmake_modules roscpp pcl_conversions pcl_ros message_filters sensor_msgs)
 find_package(OpenMP)
 find_package(Boost REQUIRED COMPONENTS random)
-find_package(Eigen3 REQUIRED)
+find_package(Eigen REQUIRED)
 find_package(octomap REQUIRED)
 include_directories(${OCTOMAP_INCLUDE_DIRS})
 link_libraries(${OCTOMAP_LIBRARIES})
